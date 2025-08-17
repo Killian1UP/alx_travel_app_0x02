@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Listing, Booking, User, Review
+from .models import Listing, Booking, User, Review, Payment
 from rest_framework.authtoken.serializers import AuthTokenSerializer
 
 class UserSerializer(serializers.ModelSerializer):
@@ -48,16 +48,22 @@ class ListingSerializer(serializers.ModelSerializer):
 class BookingSerializer(serializers.ModelSerializer):
     guest = serializers.PrimaryKeyRelatedField(read_only=True)
     listing = serializers.PrimaryKeyRelatedField(queryset=Listing.objects.all())
+    checkout_url = serializers.SerializerMethodField(read_only=True)  # new field
 
     class Meta:
         model = Booking
-        fields = ['booking_id', 'guest', 'listing', 'check_in_date',
-                  'check_out_date', 'num_guests', 'total_price',
-                  'booking_status', 'created_at']
-        read_only_fields = ('booking_id', 'created_at', 'booking_status')
+        fields = [
+            'booking_id', 'guest', 'listing', 'check_in_date',
+            'check_out_date', 'num_guests', 'total_price',
+            'booking_status', 'created_at', 'checkout_url'  # added field
+        ]
+        read_only_fields = ('booking_id', 'created_at', 'booking_status', 'checkout_url')
+
+    def get_checkout_url(self, obj):
+        # Return the dynamically attached checkout_url from BookingViewSet.perform_create
+        return getattr(obj, 'checkout_url', None)
 
     def validate(self, data):
-        # mirror some logic early (optional), model.clean will also run
         if data.get('check_in_date') and data.get('check_out_date'):
             if data['check_in_date'] >= data['check_out_date']:
                 raise serializers.ValidationError({'check_out_date': 'Check-out must be after check-in.'})
@@ -115,3 +121,44 @@ class CustomAuthTokenSerializer(AuthTokenSerializer):
 
         attrs['user'] = user
         return attrs
+    
+class PaymentSerializer(serializers.ModelSerializer):
+    booking = serializers.PrimaryKeyRelatedField(queryset=Booking.objects.all())
+    checkout_url = serializers.SerializerMethodField(read_only=True)  # new field
+
+    class Meta:
+        model = Payment
+        fields = [
+            'payment_id', 'booking', 'transaction_id', 'payment_status',
+            'amount', 'created_at', 'checkout_url'
+        ]
+        read_only_fields = ('payment_id', 'created_at', 'payment_status', 'checkout_url')
+
+    def get_checkout_url(self, obj):
+        # Return checkout_url if it exists (attached during creation)
+        return getattr(obj.booking, 'checkout_url', None)
+
+    def validate(self, data):
+        booking = data.get('booking')
+        amount = data.get('amount')
+
+        if booking and not booking.listing.is_available:
+            raise serializers.ValidationError({'booking': 'Cannot pay for an unavailable listing.'})
+
+        if amount is not None and amount <= 0:
+            raise serializers.ValidationError({'amount': 'Payment amount must be greater than zero.'})
+
+        return data
+
+    def create(self, validated_data):
+        payment = Payment(**validated_data)
+        payment.full_clean()
+        payment.save()
+        return payment
+
+    def update(self, instance, validated_data):
+        for attr, val in validated_data.items():
+            setattr(instance, attr, val)
+        instance.full_clean()
+        instance.save()
+        return instance

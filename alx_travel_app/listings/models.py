@@ -16,6 +16,13 @@ class UserRole(models.TextChoices):
     HOST = 'host', 'Host'
     ADMIN = 'admin', 'Admin'
     
+class PaymentStatus(models.TextChoices):
+    PENDING = 'pending', 'Pending'          
+    COMPLETED = 'completed', 'Completed'          
+    FAILED = 'failed', 'Failed'             
+    CANCELLED = 'cancelled', 'Cancelled'    
+    REFUNDED = 'refunded', 'Refunded'       
+    
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
@@ -148,3 +155,23 @@ class Review(models.Model):
         
     def __str__(self):
         return f'Review {self.review_id} ({self.rating}/5)'
+    
+class Payment(models.Model):
+    payment_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_index=True)
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='payments')
+    transaction_id = models.CharField(max_length=100, unique=True, null=True, blank=True)  # from Chapa
+    payment_status = models.CharField(max_length=10, choices=PaymentStatus.choices, default=PaymentStatus.PENDING.value)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def clean(self):
+        # Ensure amount is positive
+        if self.amount <=0:
+            raise ValidationError({'amount': 'Payment amount must be greater than zero.'})
+        
+        # Ensure amount does not exceed booking total
+        if self.booking and self.amount > self.booking.total_price:
+            raise ValidationError({'amount': 'Payment amount cannot exceed booking total price.'})
+    
+    def __str__(self):
+        return f"Payment {self.transaction_id or self.payment_id} - {self.payment_status}"
