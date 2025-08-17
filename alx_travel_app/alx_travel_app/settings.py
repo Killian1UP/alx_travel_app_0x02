@@ -27,10 +27,13 @@ env = environ.Env(
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-#whs(j!x!^$4yqv-vvfd8x5d_z&7*y5hh4e%1#a+9w34tryp&s'
+SECRET_KEY = env("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+
+# Chapa secret key
+CHAPA_SECRET_KEY = env("CHAPA_SECRET_KEY")
 
 ALLOWED_HOSTS = []
 
@@ -150,3 +153,6 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
 }
+
+# Email settings for development
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
